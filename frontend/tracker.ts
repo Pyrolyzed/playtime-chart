@@ -1,3 +1,4 @@
+import { Router } from 'millennium';
 import type { Session } from './data';
 
 declare const backend: any;
@@ -9,6 +10,8 @@ interface Live {
 	name: string;
 	start: number;
 	instances: Set<number>;
+	/** first time reconcile() saw Steam not listing this app as running */
+	missingSince?: number;
 }
 
 const live = new Map<number, Live>();
@@ -54,8 +57,18 @@ export function appName(appid: number): string {
 	return `App ${appid}`;
 }
 
+function endSession(appid: number, endMs: number) {
+	if (!live.delete(appid)) return;
+	backend
+		.ptSessionEnd(appid, endMs)
+		.then(emit)
+		.catch((e: unknown) => console.error('end failed', e));
+	emit();
+}
+
 function onLifetime(n: { unAppID: number; nInstanceID: number; bRunning: boolean }) {
 	const appid = n.unAppID;
+	console.log(`lifetime event: app ${appid} instance ${n.nInstanceID} running=${n.bRunning}`);
 	if (n.bRunning) {
 		let entry = live.get(appid);
 		if (!entry) {
@@ -64,19 +77,52 @@ function onLifetime(n: { unAppID: number; nInstanceID: number; bRunning: boolean
 			backend.ptSessionStart(appid, entry.name, entry.start).catch((e: unknown) => console.error('start failed', e));
 		}
 		entry.instances.add(n.nInstanceID);
+		entry.missingSince = undefined;
 		emit();
 	} else {
 		const entry = live.get(appid);
 		if (!entry) return;
 		entry.instances.delete(n.nInstanceID);
-		if (entry.instances.size === 0) {
-			live.delete(appid);
-			backend
-				.ptSessionEnd(appid, Date.now())
-				.then(emit)
-				.catch((e: unknown) => console.error('end failed', e));
+		if (entry.instances.size === 0) endSession(appid, Date.now());
+		else emit();
+	}
+}
+
+/** appids Steam currently considers running, or null if it can't be read. */
+function runningAppIds(): Set<number> | null {
+	try {
+		const apps = Router?.RunningApps;
+		if (!Array.isArray(apps)) return null;
+		return new Set(apps.map((a: any) => a?.appid).filter((id: unknown) => typeof id === 'number'));
+	} catch {
+		return null;
+	}
+}
+
+const RECONCILE_MS = 5_000;
+const STARTUP_GRACE_MS = 20_000;
+const MISSING_CONFIRM_MS = 10_000;
+
+/**
+ * Launcher-based games (e.g. The Witcher 3's REDlauncher) can report several instances and drop
+ * a "stopped" event. If Steam itself no longer lists the app as running, close the session at the
+ * moment it first disappeared.
+ */
+function reconcile() {
+	const running = runningAppIds();
+	if (!running) return;
+	const now = Date.now();
+	for (const entry of [...live.values()]) {
+		if (running.has(entry.appid)) {
+			entry.missingSince = undefined;
+			continue;
 		}
-		emit();
+		if (now - entry.start < STARTUP_GRACE_MS) continue;
+		entry.missingSince ??= now;
+		if (now - entry.missingSince >= MISSING_CONFIRM_MS) {
+			console.log(`app ${entry.appid} is no longer running per Steam; closing session`);
+			endSession(entry.appid, entry.missingSince);
+		}
 	}
 }
 
@@ -86,14 +132,16 @@ export function startTracking() {
 	stop?.();
 
 	const reg = (window as any).SteamClient?.GameSessions?.RegisterForAppLifetimeNotifications?.(onLifetime);
-	const timer = setInterval(() => {
+	const beat = setInterval(() => {
 		if (live.size) backend.ptHeartbeat(Date.now()).catch(() => {});
 	}, HEARTBEAT_MS);
+	const recon = setInterval(reconcile, RECONCILE_MS);
 
 	if (!reg) console.error('SteamClient.GameSessions is unavailable; playtime will not be tracked');
 
 	stop = () => {
-		clearInterval(timer);
+		clearInterval(beat);
+		clearInterval(recon);
 		reg?.unregister?.();
 		stop = null;
 	};
