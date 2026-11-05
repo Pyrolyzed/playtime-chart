@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { MouseEvent, useMemo, useState } from 'react';
 import { capsuleUrls } from './artwork';
 import {
 	DAY,
@@ -10,6 +10,7 @@ import {
 	Session,
 	Stats,
 	addDays,
+	averageOfAverages,
 	colorFor,
 	fmtDate,
 	fmtDateTime,
@@ -49,18 +50,35 @@ function Tile({ label, value, sub }: { label: string; value: string; sub?: strin
 	);
 }
 
-function MiniBars({ values, labels, title }: { values: number[]; labels: string[]; title: string }) {
-	const max = Math.max(1, ...values);
+interface BarSeries {
+	name?: string;
+	color?: string;
+	values: number[];
+}
+
+/** One stacked bar per label, with a segment per series. */
+function MiniBars({ series, labels, title }: { series: BarSeries[]; labels: string[]; title: string }) {
+	const totals = labels.map((_, i) => series.reduce((n, s) => n + s.values[i], 0));
+	const max = Math.max(1, ...totals);
+	const tooltip = (i: number) =>
+		[
+			`${labels[i]}: ${fmtDuration(totals[i])}`,
+			...series.filter((s) => s.name && s.values[i] > 0).map((s) => `${s.name}: ${fmtDuration(s.values[i])}`),
+		].join('\n');
 	return (
 		<div className="ptc-minibars">
 			<div className="ptc-tile-label">{title}</div>
 			<div className="ptc-minibars-row">
-				{values.map((v, i) => (
-					<div key={i} className="ptc-minibar-col" title={`${labels[i]}: ${fmtDuration(v)}`}>
+				{labels.map((label, i) => (
+					<div key={i} className="ptc-minibar-col" title={tooltip(i)}>
 						<div className="ptc-minibar-track">
-							<div className="ptc-minibar-fill" style={{ height: `${(v / max) * 100}%` }} />
+							<div className="ptc-minibar-stack" style={{ height: `${(totals[i] / max) * 100}%` }}>
+								{series.map(
+									(s, n) => s.values[i] > 0 && <div key={n} className="ptc-minibar-fill" style={{ flexGrow: s.values[i], background: s.color }} />,
+								)}
+							</div>
 						</div>
-						<div className="ptc-minibar-label">{labels[i]}</div>
+						<div className="ptc-minibar-label">{label}</div>
 					</div>
 				))}
 			</div>
@@ -68,17 +86,51 @@ function MiniBars({ values, labels, title }: { values: number[]; labels: string[
 	);
 }
 
-export function StatsPanel({ stats }: { stats: Stats }) {
+/** One game's part of a multi-game selection. */
+export interface GameBreakdown {
+	appid: number;
+	name: string;
+	color: string;
+	stats: Stats;
+}
+
+/** Which colour is which game, shown while several games are selected. */
+export function SelectionLegend({ breakdown }: { breakdown: GameBreakdown[] }) {
+	return (
+		<div className="ptc-sel-legend">
+			{breakdown.map((g) => (
+				<div key={g.appid} className="ptc-sel-legend-item">
+					<span className="ptc-dot" style={{ background: g.color }} />
+					<span>{g.name}</span>
+					<span className="ptc-sel-legend-time">{fmtDuration(g.stats.totalMs)}</span>
+				</div>
+			))}
+		</div>
+	);
+}
+
+/** `stats` covers everything shown; `breakdown` is set when that is several selected games. */
+export function StatsPanel({ stats, breakdown }: { stats: Stats; breakdown?: GameBreakdown[] }) {
 	const hourLabels = Array.from({ length: 24 }, (_, h) => (h % 6 === 0 ? String(h) : ''));
+	const seriesOf = (pick: (s: Stats) => number[]): BarSeries[] =>
+		breakdown ? breakdown.map((g) => ({ name: g.name, color: g.color, values: pick(g.stats) })) : [{ values: pick(stats) }];
 	return (
 		<div className="ptc-stats">
 			<div className="ptc-tiles">
 				<Tile label="Total playtime" value={fmtDuration(stats.totalMs)} sub={`${stats.sessions} session${stats.sessions === 1 ? '' : 's'}`} />
-				<Tile label="Average session" value={fmtDuration(stats.avgMs)} sub={`median ${fmtDuration(stats.medianMs)}`} />
+				{breakdown ? (
+					<Tile
+						label="Average session"
+						value={fmtDuration(averageOfAverages(breakdown.map((g) => g.stats)))}
+						sub={`average of ${breakdown.length} games' averages`}
+					/>
+				) : (
+					<Tile label="Average session" value={fmtDuration(stats.avgMs)} sub={`median ${fmtDuration(stats.medianMs)}`} />
+				)}
 				<Tile
 					label="Longest session"
 					value={fmtDuration(stats.longestMs)}
-					sub={stats.longest ? fmtDate(stats.longest.start) : '—'}
+					sub={stats.longest ? (breakdown ? `${stats.longest.name}, ${fmtDate(stats.longest.start)}` : fmtDate(stats.longest.start)) : '—'}
 				/>
 				<Tile
 					label="Days played"
@@ -103,8 +155,8 @@ export function StatsPanel({ stats }: { stats: Stats }) {
 				/>
 			</div>
 			<div className="ptc-minibars-wrap">
-				<MiniBars title="By weekday" values={stats.byWeekday} labels={WEEKDAYS} />
-				<MiniBars title="By hour of day" values={stats.byHour} labels={hourLabels} />
+				<MiniBars title="By weekday" series={seriesOf((s) => s.byWeekday)} labels={WEEKDAYS} />
+				<MiniBars title="By hour of day" series={seriesOf((s) => s.byHour)} labels={hourLabels} />
 			</div>
 		</div>
 	);
@@ -115,14 +167,14 @@ export function StatsPanel({ stats }: { stats: Stats }) {
 interface GanttProps {
 	sessions: Session[];
 	range: Range;
-	/** colour every game differently (all-games view) */
-	multi: boolean;
+	/** colour per game when several are shown; otherwise every bar uses the accent colour */
+	colorOf?: (appid: number) => string;
 	hideEmpty: boolean;
 }
 
 const HOUR_MARKS = [0, 3, 6, 9, 12, 15, 18, 21, 24];
 
-export function GanttChart({ sessions, range, multi, hideEmpty }: GanttProps) {
+export function GanttChart({ sessions, range, colorOf, hideEmpty }: GanttProps) {
 	const [hover, setHover] = useState<Session | null>(null);
 
 	const rows = useMemo(() => {
@@ -169,7 +221,7 @@ export function GanttChart({ sessions, range, multi, hideEmpty }: GanttProps) {
 										style={{
 											left: `${(g.from / DAY) * 100}%`,
 											width: `${Math.max(((g.to - g.from) / DAY) * 100, 0.25)}%`,
-											background: multi ? colorFor(g.session.appid) : undefined,
+											background: colorOf?.(g.session.appid),
 										}}
 										onMouseEnter={() => setHover(g.session)}
 										onMouseLeave={() => setHover(null)}
@@ -223,8 +275,9 @@ function arcPath(cx: number, cy: number, r0: number, r1: number, a0: number, a1:
 	return `M ${p(r1, a0)} A ${r1} ${r1} 0 ${large} 1 ${p(r1, a1)} L ${p(r0, a1)} A ${r0} ${r0} 0 ${large} 0 ${p(r0, a0)} Z`;
 }
 
-export function PieChart({ slices }: { slices: Slice[] }) {
+export function PieChart({ slices, onGameMenu }: { slices: Slice[]; onGameMenu: (e: MouseEvent<Element>, appid: number, name: string) => void }) {
 	const [active, setActive] = useState<string | null>(null);
+	const menuFor = (s: Slice) => (s.key === 'other' ? undefined : (e: MouseEvent<Element>) => onGameMenu(e, Number(s.key), s.label));
 	const total = slices.reduce((n, s) => n + s.ms, 0);
 	if (!total) return <div className="ptc-empty">No playtime in this date range.</div>;
 
@@ -246,6 +299,7 @@ export function PieChart({ slices }: { slices: Slice[] }) {
 						strokeWidth={c - 6 - 70}
 						onMouseEnter={() => setActive(slices[0].key)}
 						onMouseLeave={() => setActive(null)}
+						onContextMenu={menuFor(slices[0])}
 					/>
 				) : (
 					slices.map((s) => {
@@ -262,6 +316,7 @@ export function PieChart({ slices }: { slices: Slice[] }) {
 								strokeWidth={1.5}
 								onMouseEnter={() => setActive(s.key)}
 								onMouseLeave={() => setActive(null)}
+								onContextMenu={menuFor(s)}
 							>
 								<title>{`${s.label}: ${fmtDuration(s.ms)} (${((s.ms / total) * 100).toFixed(1)}%)`}</title>
 							</path>
@@ -282,6 +337,7 @@ export function PieChart({ slices }: { slices: Slice[] }) {
 						className={`ptc-legend-row${active === s.key ? ' active' : ''}`}
 						onMouseEnter={() => setActive(s.key)}
 						onMouseLeave={() => setActive(null)}
+						onContextMenu={menuFor(s)}
 					>
 						<span className="ptc-dot" style={{ background: s.color }} />
 						<span className="ptc-legend-name">{s.label}</span>

@@ -31,6 +31,7 @@ export const CSS = `
 	border-radius: 3px; padding: 5px 8px; font: inherit; color-scheme: dark;
 }
 .ptc-spacer { flex: 1; }
+.ptc-warn { padding: 8px 20px; background: #4a3a1a; color: #f0d48a; font-size: 12px; border-bottom: 1px solid var(--ptc-line); }
 .ptc-body { flex: 1; min-height: 0; display: flex; }
 .ptc-scroll { overflow-y: auto; min-height: 0; }
 
@@ -44,7 +45,7 @@ export const CSS = `
 .ptc-tools input[type=text] { flex: 1; min-width: 0; }
 .ptc-tools input[type=range] { width: 90px; }
 .ptc-grid { display: grid; gap: 14px; padding: 14px; align-content: start; flex: 1; }
-.ptc-card { cursor: pointer; border-radius: 4px; outline: 2px solid transparent; transition: transform .1s; }
+.ptc-card { cursor: pointer; border-radius: 4px; outline: 2px solid transparent; transition: transform .1s; user-select: none; }
 .ptc-card:hover { transform: translateY(-2px); }
 .ptc-card.sel { outline-color: var(--ptc-accent); }
 .ptc-cover { position: relative; aspect-ratio: 2 / 3; background: var(--ptc-panel2); border-radius: 4px; overflow: hidden; }
@@ -59,6 +60,9 @@ export const CSS = `
 .ptc-detail { flex: 1 1 54%; min-width: 360px; padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 16px; }
 .ptc-detail h2 { margin: 0; font-size: 22px; font-weight: 600; }
 .ptc-sub { color: var(--ptc-dim); font-size: 12px; margin-top: 2px; }
+.ptc-sel-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; }
+.ptc-sel-legend-item { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ptc-sel-legend-time { color: var(--ptc-dim); }
 .ptc-section-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-weight: 600; }
 .ptc-section-head label { font-weight: 400; color: var(--ptc-dim); font-size: 12px; display: flex; gap: 6px; align-items: center; }
 
@@ -72,7 +76,8 @@ export const CSS = `
 .ptc-minibars-row { display: flex; gap: 3px; height: 70px; margin-top: 6px; }
 .ptc-minibar-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .ptc-minibar-track { flex: 1; display: flex; align-items: flex-end; }
-.ptc-minibar-fill { width: 100%; background: var(--ptc-accent); border-radius: 2px 2px 0 0; min-height: 1px; opacity: .85; }
+.ptc-minibar-stack { width: 100%; min-height: 1px; display: flex; flex-direction: column; border-radius: 2px 2px 0 0; overflow: hidden; }
+.ptc-minibar-fill { flex: 1 1 0; background: var(--ptc-accent); opacity: .85; }
 .ptc-minibar-label { font-size: 10px; color: var(--ptc-dim); text-align: center; height: 13px; white-space: nowrap; overflow: visible; }
 
 /* gantt */

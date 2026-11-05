@@ -167,3 +167,42 @@ export async function loadSessions(): Promise<Session[]> {
 export async function deleteSession(id: string): Promise<boolean> {
 	return backend.ptDeleteSession(id);
 }
+
+export interface StorageInfo {
+	dir: string;
+	default_dir: string;
+	custom: boolean;
+	available: boolean;
+	pending: boolean;
+}
+
+export interface SetDataDirResult {
+	ok: boolean;
+	error?: string;
+	copied?: number;
+	source_unreachable?: boolean;
+	info?: StorageInfo;
+}
+
+/** Millennium usually decodes JSON-looking strings from the backend already. */
+function decoded<T>(raw: unknown): T {
+	return (typeof raw === 'string' ? JSON.parse(raw) : raw) as T;
+}
+
+/** Removes all finished sessions of the games and reloads open views. */
+export async function resetGames(appids: number[]): Promise<{ ok: boolean; error?: string; removed?: number }> {
+	const result = decoded<{ ok: boolean; error?: string; removed?: number }>(await backend.ptResetGames(appids.join(',')));
+	if (result.ok) emit();
+	return result;
+}
+
+export async function getStorageInfo(): Promise<StorageInfo> {
+	return decoded<StorageInfo>(await backend.ptGetStorageInfo());
+}
+
+/** Moves storage to `path` (empty restores the default) and reloads open views. */
+export async function setDataDir(path: string): Promise<SetDataDirResult> {
+	const result = decoded<SetDataDirResult>(await backend.ptSetDataDir(path));
+	if (result.ok) emit();
+	return result;
+}

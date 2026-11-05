@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { PlaytimePage } from './PlaytimePage';
 import { CSS } from './styles';
 import { installSteamMenuItem, removeSteamMenuItem } from './steamMenu';
+import { StorageSettings } from './StorageSettings';
 import { startTracking } from './tracker';
 
 const ROUTE = '/playtimechart';
@@ -37,9 +38,12 @@ const Launcher = () => {
 };
 
 const SettingsContent = () => (
-	<Field label="Playtime Chart" description="Sessions are recorded automatically while this plugin is enabled." onClick={openPage}>
-		<button onClick={openPage}>Open</button>
-	</Field>
+	<>
+		<Field label="Playtime Chart" description="Sessions are recorded automatically while this plugin is enabled." onClick={openPage}>
+			<button onClick={openPage}>Open</button>
+		</Field>
+		<StorageSettings />
+	</>
 );
 
 export default definePlugin(() => {

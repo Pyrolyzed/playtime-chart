@@ -1,4 +1,5 @@
 local storage = require("storage")
+local cjson   = require("json")
 
 ---@ffi
 --- A game started. Timestamps are unix milliseconds.
@@ -40,4 +41,27 @@ end
 ---@return boolean
 function ptDeleteSession(id)
     return storage.delete(id)
+end
+
+---@ffi
+--- Removes every finished session of the games. Returns a JSON object string.
+---@param appids string comma separated
+---@return string
+function ptResetGames(appids)
+    return cjson.encode(storage.reset_games(appids))
+end
+
+---@ffi
+--- Where sessions are stored, as a JSON object string.
+---@return string
+function ptGetStorageInfo()
+    return cjson.encode(storage.info())
+end
+
+---@ffi
+--- Changes the data folder (empty restores the default). Returns a JSON object string.
+---@param path string
+---@return string
+function ptSetDataDir(path)
+    return cjson.encode(storage.set_data_dir(path))
 end

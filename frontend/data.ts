@@ -294,6 +294,39 @@ export function computeStats(sessions: Session[], range: Range, now = Date.now()
 	};
 }
 
+/** The mean of each game's own average session, so every game counts equally. */
+export function averageOfAverages(perGame: Stats[]): number {
+	return perGame.length ? perGame.reduce((n, s) => n + s.avgMs, 0) / perGame.length : 0;
+}
+
+// ---------- selection ----------
+
+export interface Selection {
+	selected: number[];
+	/** Where the next shift+click range starts. */
+	anchor: number | null;
+}
+
+/**
+ * The selection after clicking a game, as in a file explorer: a plain click selects only it,
+ * ctrl toggles it, shift selects the range from the anchor, and ctrl+shift adds that range.
+ * `order` is the order the games are displayed in.
+ */
+export function nextSelection(current: Selection, appid: number, order: number[], keys: { shift: boolean; ctrl: boolean }): Selection {
+	const { selected, anchor } = current;
+	if (keys.shift && anchor !== null) {
+		const a = order.indexOf(anchor);
+		const b = order.indexOf(appid);
+		if (a >= 0 && b >= 0) {
+			const span = order.slice(Math.min(a, b), Math.max(a, b) + 1);
+			return { selected: keys.ctrl ? [...new Set([...selected, ...span])] : span, anchor };
+		}
+	}
+	if (!keys.ctrl) return { selected: [appid], anchor: appid };
+	const toggled = selected.includes(appid) ? selected.filter((id) => id !== appid) : [...selected, appid];
+	return { selected: toggled, anchor: appid };
+}
+
 // ---------- colours ----------
 
 export const PALETTE = [
@@ -315,4 +348,21 @@ export const OTHER_COLOR = '#6b7785';
 /** Stable colour per game, independent of the current ranking. */
 export function colorFor(appid: number): string {
 	return PALETTE[Math.abs(Math.imul(appid, 2654435761) >>> 0) % PALETTE.length];
+}
+
+/**
+ * A different colour per game. Each keeps its usual colour unless an earlier game has it, so
+ * adding to a selection doesn't recolour what's already on the chart.
+ */
+export function assignColors(appids: number[]): Map<number, string> {
+	const colors = new Map<number, string>();
+	const used = new Set<string>();
+	for (const appid of appids) {
+		const usual = colorFor(appid);
+		// golden-angle hues stay apart once the palette runs out
+		const color = !used.has(usual) ? usual : PALETTE.find((c) => !used.has(c)) ?? `hsl(${(colors.size * 137.5) % 360}, 60%, 60%)`;
+		used.add(color);
+		colors.set(appid, color);
+	}
+	return colors;
 }
